@@ -19,13 +19,16 @@
     "nats:start": "node --import ./scripts/register-cf-shim.mjs dist-nats/main.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "pregen:pg": "npm run gen:decorator-imports",
+    "gen:pg": "ceves-generate-pg --entry src/pg-entry.ts --out ceves-pg.sql --manifest ceves-pg.manifest.json"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.1",
     "@nats-io/jetstream": "^3.4.0",
     "@nats-io/kv": "^3.4.0",
     "@nats-io/transport-node": "^3.4.0",
+    "@sydorenkoalex/ceves": "file:..",
     "ceves": "file:..",
     "hono": "^4.10.6",
     "zod": "^4.4.3"

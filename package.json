@@ -1,7 +1,7 @@
 {
   "name": "@sydorenkoalex/ceves",
   "version": "0.4.0",
-  "description": "Event Sourcing framework for Cloudflare Workers (Durable Objects + R2), AWS Lambda, and NATS \u2014 CQRS with decorator routes and OpenAPI",
+  "description": "Event Sourcing framework for Cloudflare Workers (Durable Objects + R2), AWS Lambda, NATS, and PostgreSQL (PLV8) \u2014 CQRS with decorator routes and OpenAPI",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -21,10 +21,15 @@
     "./nats/cloudflare-workers-shim": {
       "types": "./dist/adapters/nats/cloudflare-workers-shim.d.ts",
       "import": "./dist/adapters/nats/cloudflare-workers-shim.js"
+    },
+    "./pg": {
+      "types": "./dist/adapters/pg/index.d.ts",
+      "import": "./dist/adapters/pg/index.js"
     }
   },
   "bin": {
-    "ceves-generate-imports": "./bin/generate-decorator-imports.mjs"
+    "ceves-generate-imports": "./bin/generate-decorator-imports.mjs",
+    "ceves-generate-pg": "./bin/generate-pg.mjs"
   },
   "files": [
     "dist",
@@ -68,7 +73,10 @@
     "serverless",
     "multi-cloud",
     "event-store",
-    "openapi"
+    "openapi",
+    "postgresql",
+    "plv8",
+    "transactional-outbox"
   ],
   "author": "Alex Sydorenko",
   "license": "MIT",
@@ -116,7 +124,8 @@
     "@nats-io/kv": "^3.4.0",
     "@types/aws-lambda": "^8.10.0",
     "typescript": ">=5.0.0",
-    "@cloudflare/workers-types": ">=4.20251213.0"
+    "@cloudflare/workers-types": ">=4.20251213.0",
+    "esbuild": ">=0.20.0"
   },
   "peerDependenciesMeta": {
     "@aws-sdk/client-s3": {
@@ -135,6 +144,9 @@
       "optional": true
     },
     "@cloudflare/workers-types": {
+      "optional": true
+    },
+    "esbuild": {
       "optional": true
     }
   }
