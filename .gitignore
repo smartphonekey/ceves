@@ -152,6 +152,10 @@ _decoratorImports.generated.ts
 # Generated API docs (typedoc)
 docs/api/
 
+# Generated PostgreSQL deployment script + manifest (ceves-generate-pg)
+example/ceves-pg.sql
+example/ceves-pg.manifest.json
+
 # Build output
 dist/
 dist-nats/

@@ -9,9 +9,11 @@ Object; its state is rebuilt by replaying events from R2; commands and queries
 are decorated route classes with automatic OpenAPI docs.
 
 The same application code also runs on **AWS Lambda** (S3 event log, via the
-`./aws` subpath export) and on **self-hosted NATS** (JetStream event log +
-NATS KV state, via the `./nats` subpath export) — only the entry point
-differs per runtime. Cloudflare Workers and NATS are the exercised targets.
+`./aws` subpath export), on **self-hosted NATS** (JetStream event log +
+NATS KV state, via the `./nats` subpath export), and on **PostgreSQL**
+(handlers compiled into PLV8 functions, state in a table, via the `./pg`
+subpath export) — only the entry point differs per runtime. Cloudflare
+Workers and NATS are the exercised targets.
 
 ## Install
 
@@ -79,6 +81,30 @@ Read [docs/architecture/nats.md](docs/architecture/nats.md), then run the
 bank example on NATS: `example/src/nats-main.ts` +
 `example/scripts/nats-e2e.sh`.
 
+**PostgreSQL / PLV8** (`ceves/pg`): the command and query handlers run
+*inside the database*. `ceves-generate-pg` bundles them into one JavaScript
+module and emits an idempotent SQL script — `ceves.execute_command` /
+`ceves.execute_query` PLV8 functions, a `ceves.aggregate_state` table, and
+one `cmd_*` / `qry_*` function per route so a REST extension (PostgREST) can
+serve `/rpc/...` directly. A thin Hono wrapper (`registerPgRoutes`) keeps the
+same OpenAPI endpoints on Workers or Node.
+
+The event log still lives in R2/S3 — never in PostgreSQL — but the emitted
+event is committed to a **transactional outbox** in the same transaction as
+the state write, so delivery to that log is guaranteed rather than
+best-effort. Fire-and-forget `fetch` calls made by handlers are intercepted
+into the same outbox (PLV8 has no network) and delivered post-commit by
+`drainPgOutbox` with retries. Requires the PLV8 extension (>= 3.1) and
+`esbuild` where the generator runs.
+
+```bash
+npx ceves-generate-pg --entry src/pg-entry.ts --out ceves-pg.sql
+psql -f ceves-pg.sql
+```
+
+Read [docs/architecture/postgresql.md](docs/architecture/postgresql.md), then
+see `example/src/pg-entry.ts` (`npm run gen:pg` in `example/`).
+
 **AWS Lambda** (`ceves/aws`): S3 event store + optional S3 snapshot store,
 `createLambdaHandler` adapts the router to API Gateway. Install
 `@aws-sdk/client-s3`.
@@ -136,6 +162,10 @@ committing the bump.
 - [docs/architecture/nats.md](docs/architecture/nats.md) — the NATS runtime:
   subject naming, OCC and version-continuity guards, org directory,
   transfer semantics, known limits.
+- [docs/architecture/postgresql.md](docs/architecture/postgresql.md) — the
+  PostgreSQL/PLV8 runtime: in-database dispatch, state row + version guard,
+  the transactional outbox (guaranteed event delivery), and what cannot run
+  inside the database.
 
 ## Decorator Registration (`ceves-generate-imports`)
 

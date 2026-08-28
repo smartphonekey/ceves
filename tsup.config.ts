@@ -7,6 +7,7 @@ export default defineConfig({
     'adapters/nats/index': 'src/adapters/nats/index.ts',
     'adapters/nats/cloudflare-workers-shim':
       'src/adapters/nats/cloudflare-workers-shim.ts',
+    'adapters/pg/index': 'src/adapters/pg/index.ts',
   },
   format: ['esm'],
   dts: true, // Re-enable to check errors

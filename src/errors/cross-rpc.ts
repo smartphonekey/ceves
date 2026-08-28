@@ -86,7 +86,7 @@ interface CrossRpcErrorPayload {
  * preserves chanfana wire compatibility for client SDKs while making
  * typed metadata available to internal rehydration.
  */
-interface CrossRpcErrorEnvelope {
+export interface CrossRpcErrorEnvelope {
   readonly success: false;
   readonly errors: ReadonlyArray<{ readonly code: number; readonly message: string }>;
   readonly __ceves?: CrossRpcErrorPayload;
@@ -151,15 +151,16 @@ function safeStringify(value: unknown): string {
 }
 
 /**
- * Serialise any thrown value into a structured `Response` suitable for
- * crossing the DO → worker RPC boundary without losing context.
- *
- * Use this from `AggregateObject.handleError` (or any DO `fetch()`
- * catch-all) instead of returning a plain `Response` so callers that
- * opt into rehydration (`stubFetchWithTypedErrors`) can rebuild the
- * typed error on the other side.
+ * Build the status code + JSON envelope for any thrown value, without
+ * constructing a `Response`. This is the single source of truth for the
+ * Ceves error wire shape — `serializeErrorToResponse` wraps it for
+ * `Response`-capable runtimes (workers / Durable Objects), while the
+ * PostgreSQL/PLV8 dispatcher consumes it directly (PLV8 has no `Response`).
  */
-export function serializeErrorToResponse(error: unknown): Response {
+export function buildErrorEnvelope(error: unknown): {
+  status: number;
+  envelope: CrossRpcErrorEnvelope;
+} {
   if (error instanceof CevesError) {
     const json = error.toJSON();
     // Pick up subclass-specific own properties (eventType, eventVersion,
@@ -195,13 +196,7 @@ export function serializeErrorToResponse(error: unknown): Response {
       errors: [{ code: error.httpStatusCode, message: error.message }],
       __ceves: payload,
     };
-    return new Response(JSON.stringify(envelope), {
-      status: error.httpStatusCode,
-      headers: {
-        'Content-Type': 'application/json',
-        [CROSS_RPC_ERROR_HEADER]: '1',
-      },
-    });
+    return { status: error.httpStatusCode, envelope };
   }
 
   // Non-CevesError path: prefer the native error message; fall back to
@@ -218,8 +213,22 @@ export function serializeErrorToResponse(error: unknown): Response {
     errors: [{ code: 500, message }],
     __ceves: { name, message, httpStatusCode: 500 },
   };
+  return { status: 500, envelope };
+}
+
+/**
+ * Serialise any thrown value into a structured `Response` suitable for
+ * crossing the DO → worker RPC boundary without losing context.
+ *
+ * Use this from `AggregateObject.handleError` (or any DO `fetch()`
+ * catch-all) instead of returning a plain `Response` so callers that
+ * opt into rehydration (`stubFetchWithTypedErrors`) can rebuild the
+ * typed error on the other side.
+ */
+export function serializeErrorToResponse(error: unknown): Response {
+  const { status, envelope } = buildErrorEnvelope(error);
   return new Response(JSON.stringify(envelope), {
-    status: 500,
+    status,
     headers: {
       'Content-Type': 'application/json',
       [CROSS_RPC_ERROR_HEADER]: '1',
