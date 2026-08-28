@@ -7,7 +7,7 @@
  * @packageDocumentation
  */
 
-import { CevesError } from '../errors/index';
+import { CevesError } from '../errors/CevesError';
 
 /**
  * Error thrown when API key header is missing from request.

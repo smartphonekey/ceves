@@ -21,20 +21,25 @@ interface EventApplicationErrorJSON extends CevesErrorJSON {
  *
  * @example
  * ```typescript
- * import { EventApplicationError } from './EventApplicationError';
+ * import { EventApplicationError, EventHandler, type IEventHandler } from 'ceves';
  *
- * // In an @EventHandler apply() method:
- * apply(state: AccountState, event: MoneyWithdrawnEvent, metadata: EventMetadata): AccountState {
- *   if (state.balance < event.amount) {
- *     throw new EventApplicationError(
- *       'Insufficient funds',
- *       'MoneyWithdrawn',
- *       metadata.version,
- *       metadata.aggregateType,
- *       metadata.aggregateId
- *     );
+ * @EventHandler
+ * class MoneyWithdrawnHandler implements IEventHandler<AccountState, MoneyWithdrawnEventData> {
+ *   eventType = 'MoneyWithdrawn';
+ *   aggregateType = 'BankAccountAggregate';
+ *
+ *   apply(state: AccountState, event: MoneyWithdrawnEventData, metadata: EventMetadata): AccountState {
+ *     if (state.balance < event.amount) {
+ *       throw new EventApplicationError(
+ *         'Insufficient funds',
+ *         this.eventType,
+ *         metadata.version,
+ *         this.aggregateType,
+ *         metadata.aggregateId
+ *       );
+ *     }
+ *     return { ...state, balance: state.balance - event.amount };
  *   }
- *   return { ...state, balance: state.balance - event.amount };
  * }
  * ```
  */

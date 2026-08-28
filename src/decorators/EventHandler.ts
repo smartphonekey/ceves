@@ -18,8 +18,9 @@ import type { StoredEvent } from '../storage/interfaces';
 import type { DomainEvent } from '../events/DomainEvent';
 import type { EventMetadata } from '../events/EventMetadata';
 import { EventApplicationError } from '../errors/EventApplicationError';
-const logger = { info: console.log, error: console.error, warn: console.warn, debug: console.debug };
+import { createLogger } from '../logger';
 
+const logger = createLogger({ component: 'EventHandler' });
 
 /**
  * Metadata for event handler registration
@@ -27,7 +28,7 @@ const logger = { info: console.log, error: console.error, warn: console.warn, de
  * Contains the essential information needed to identify and route events
  * to the appropriate handler.
  */
-export interface EventHandlerMetadata {
+interface EventHandlerMetadata {
   /** Event type this handler processes (e.g., 'AccountDebited') */
   eventType: string;
 
@@ -39,13 +40,13 @@ export interface EventHandlerMetadata {
 }
 
 /**
- * Event handler interface - all event handlers must implement this
+ * Event handler interface - all event handlers must implement this (ADR-009)
  *
  * Event handlers are pure functions that transform aggregate state based on domain events.
  * They receive pure business data (domain event) and infrastructure metadata separately,
  * maintaining clean separation of concerns.
  *
- * ** Empty State Pattern:**
+ * **ADR-009 Empty State Pattern:**
  * - Event handlers ALWAYS receive non-null state (empty state for first event)
  * - Event handlers SET id and orgId (business decisions from metadata/event)
  * - Framework AUTO-SETS timestamp and version AFTER handler returns
@@ -93,7 +94,7 @@ export interface IEventHandler<
    * Event handlers transform aggregate state based on domain events. The handler
    * receives pure business data (event) and infrastructure metadata separately.
    *
-   * ** Changes:**
+   * **ADR-009 Changes:**
    * - State is NEVER null (empty state provided for first event)
    * - Handler MUST set id and orgId (business fields)
    * - Handler returns FULL state (including orgId)
@@ -281,25 +282,6 @@ export function getEventHandlers(): Map<string, EventHandlerEntry> {
   return EVENT_HANDLERS;
 }
 
-/**
- * Get event handlers for specific aggregate type
- *
- * @param aggregateType - Aggregate type to filter by
- * @returns Array of event handler entries for that aggregate
- */
-export function getHandlersByAggregateType(
-  aggregateType: string
-): EventHandlerEntry[] {
-  const handlers: EventHandlerEntry[] = [];
-
-  for (const [, entry] of EVENT_HANDLERS) {
-    if (entry.metadata.aggregateType === aggregateType) {
-      handlers.push(entry);
-    }
-  }
-
-  return handlers;
-}
 
 /**
  * Find event handler by event type and aggregate type
@@ -322,10 +304,10 @@ export function findEventHandler(
  * Convenience function that finds and applies the appropriate event handler.
  * Extracts domain event from StoredEvent envelope and passes metadata separately.
  *
- * **Architecture ( + ):**
+ * **Architecture (ADR-008 + ADR-009):**
  * - Domain events are extracted from the StoredEvent envelope
  * - Handlers receive pure business data (domain event) and infrastructure metadata separately
- * - Handlers ALWAYS receive non-null state (empty state for first event - )
+ * - Handlers ALWAYS receive non-null state (empty state for first event - ADR-009)
  * - Handlers SET id and orgId (business decisions)
  * - Framework AUTO-SETS timestamp and version AFTER handler returns (infrastructure fields)
  * - Framework READS orgId from state when creating StoredEvent
@@ -359,10 +341,10 @@ export function applyEventToState<TState extends BaseState>(
     );
   }
 
-  // Provide empty state for first event
+  // Provide empty state for first event (ADR-009)
   const inputState = state ?? new StateClass();
 
-  // Extract domain event from StoredEvent envelope
+  // Extract domain event from StoredEvent envelope (ADR-008)
   const domainEvent = event.event;
 
   // Create metadata from StoredEvent envelope fields

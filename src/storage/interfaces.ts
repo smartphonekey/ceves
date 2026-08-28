@@ -9,7 +9,7 @@
  * - Generic type parameters enable type-safe usage with domain events
  * - Separate interfaces for events and snapshots (Single Responsibility Principle)
  * - afterVersion parameter enables incremental event loading for performance
- * - orgId at envelope level for multi-tenancy
+ * - orgId at envelope level for multi-tenancy (Epic 9: ADR-008)
  *
  * @packageDocumentation
  */
@@ -33,7 +33,7 @@ import type { DomainEvent } from '../events/DomainEvent';
  * Architecture:
  * - Domain events (TEvent) contain only business data
  * - StoredEvent envelope adds infrastructure fields (version, timestamp, orgId)
- * - See documentation for full design rationale
+ * - See ADR-008 in architecture.md for full design rationale
  *
  * @example
  * ```typescript
@@ -98,7 +98,7 @@ export interface StoredEvent<TEvent extends DomainEvent = DomainEvent> {
    *
    * Auto-extracted from state/request by the base command handler.
    *
-   * @see Multi-tenancy documentation
+   * @see Epic 8 (Multitenancy) and ADR-008 in architecture.md
    */
   orgId: string;
 
@@ -113,7 +113,7 @@ export interface StoredEvent<TEvent extends DomainEvent = DomainEvent> {
    * - event.event.owner (for AccountOpenedEvent)
    * - event.event.amount (for MoneyDepositedEvent)
    *
-   * @see Domain event architecture documentation
+   * @see Story 9.1 and ADR-008 for domain event architecture
    */
   event: TEvent;
 }
@@ -227,6 +227,10 @@ export interface IEventStore {
    * @param aggregateType - Type of aggregate (e.g., "account")
    * @param aggregateId - Unique identifier of the aggregate instance
    * @param afterVersion - Optional. Only return events with version > afterVersion
+   * @param limit - Optional. Return at most this many events (the next page,
+   *   in ascending version order). Combined with `afterVersion` this enables
+   *   bounded, paged replay so a cold-start restore never has to pull an
+   *   entire (possibly huge) event stream into memory at once.
    * @returns Promise resolving to ordered array of events, or empty array if none found
    * @throws {EventStoreError} If events cannot be retrieved
    *
@@ -237,12 +241,16 @@ export interface IEventStore {
    *
    * // Load only events after version 10 (e.g., after a snapshot)
    * const recentEvents = await store.load('account', 'acc-123', 10);
+   *
+   * // Load the next page of up to 100 events after version 10
+   * const page = await store.load('account', 'acc-123', 10, 100);
    * ```
    */
   load(
     aggregateType: string,
     aggregateId: string,
-    afterVersion?: number
+    afterVersion?: number,
+    limit?: number
   ): Promise<StoredEvent[]>;
 
   /**

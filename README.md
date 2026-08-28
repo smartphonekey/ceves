@@ -1,172 +1,255 @@
-# Ceves - Event Sourcing for Cloudflare Workers
+# Ceves
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0%2B-blue)](https://www.typescriptlang.org/)
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-orange)](https://workers.cloudflare.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**Ceves** (Command/Event/View/Entity/State) is an event sourcing framework for Cloudflare Workers and Durable Objects. Write your domain logic once, get automatic state persistence, OpenAPI docs, and zero-latency reads. Built with TypeScript-first design and decorator-based patterns.
+Event-sourcing framework for Cloudflare Workers. An aggregate is a Durable
+Object; its state is rebuilt by replaying events from R2; commands and queries
+are decorated route classes with automatic OpenAPI docs.
 
-## Why Ceves?
+The same application code also runs on **AWS Lambda** (S3 event log, via the
+`./aws` subpath export) and on **self-hosted NATS** (JetStream event log +
+NATS KV state, via the `./nats` subpath export) — only the entry point
+differs per runtime. Cloudflare Workers and NATS are the exercised targets.
 
-Event sourcing typically requires weeks of infrastructure work: event stores, snapshot management, state restoration, and testing setup. Ceves handles all of that:
-
-- **Zero Infrastructure Code** - Write only domain logic (commands, events, state)
-- **Zero-Latency State** - Durable Objects use built-in transactional storage (no network calls)
-- **Automatic OpenAPI** - Routes generate OpenAPI docs and Swagger UI automatically
-- **Superior DX** - Local testing with Wrangler, TypeScript-first, decorator-based
-- **Serverless Economics** - True pay-per-use pricing on Cloudflare Workers
-- **Production Ready** - Battle-tested patterns proven in production systems
-
-## Installation
+## Install
 
 ```bash
-npm install ceves
+npm install @sydorenkoalex/ceves
 ```
 
-## Quick Start
+TypeScript projects targeting Cloudflare Workers also need the Workers types
+(the root entry's declarations reference them):
 
-Build your first event-sourced bank account in 5 minutes:
-
-```typescript
-import { CevesApp, R2EventStore, D1SnapshotStore } from 'ceves';
-
-// 1. Define your state
-interface BankAccountState extends BaseState {
-  balance: number;
-}
-
-// 2. Define commands & events
-class DepositCommand extends BaseCommand { /* ... */ }
-class MoneyDepositedEvent extends BaseEvent {
-  apply(state: BankAccountState) {
-    return { ...state, balance: state.balance + this.amount };
-  }
-}
-
-// 3. Create handler
-@CommandHandler
-class DepositHandler {
-  handle(cmd: DepositCommand) {
-    return [new MoneyDepositedEvent(cmd)];
-  }
-}
-
-// 4. Use it!
-const app = new CevesApp({
-  eventStore: new R2EventStore(env.EVENTS),
-  snapshotStore: new D1SnapshotStore(env.DB),
-});
-
-const state = await app.execute(depositCommand);
+```bash
+npm install -D @cloudflare/workers-types
 ```
 
-**[Full Getting Started Guide](./GETTING_STARTED.md)** for complete walkthrough.
+Code samples below import from `ceves` — alias the package if you prefer the
+short specifier (`"ceves": "npm:@sydorenkoalex/ceves"` in `dependencies`),
+or import from `@sydorenkoalex/ceves` directly. The bundled example uses
+`"ceves": "file:.."`, which is why its imports read `from 'ceves'`.
 
-See the complete working example in [`/example`](./example/README.md) with full BankAccount domain implementation.
+## The API
 
-## Example
+```
+@Route({ method, path })  +  CreateCommandRoute | CommandRoute | QueryRoute
+@EventHandler             +  IEventHandler<TState, TEventData>
+AggregateObject              the Durable Object base class
+createRouter(options)        Hono + Chanfana router over every @Route class
+```
 
-See [`/example`](./example/README.md) for a complete Cloudflare Workers example:
-- BankAccount domain (Open, Deposit, Withdraw)
-- Full command and event handlers
-- Comprehensive test suite
-- Wrangler configuration
-- Local development setup
+| Base class | Use when | `execute*` signature |
+| --- | --- | --- |
+| `CreateCommandRoute` | the aggregate does not exist yet | `(command, env)` |
+| `CommandRoute` | the aggregate must already exist | `(command, state, env)` |
+| `QueryRoute` | read-only, emits no event | `executeQuery(state, query, c)` |
+
+The framework enforces the create/update split, so you never write
+`if (state) throw …` yourself. Note the create semantics are **idempotent, not
+409** (AA-92): sending a `CreateCommandRoute` command at an aggregate that
+already exists is a no-op returning **200 with `event: null`** (the NO_EVENT
+response shape); a genuine create returns **201** with the event. The old 409
+was removed because every idempotent caller caught and error-logged it,
+burying real bugs under thousands of expected-outcome errors a week.
+See `AggregateObject.ts` → "AA-92".
+
+> **Retired APIs.** `CevesApp`, `BaseCommand`, `BaseEvent`, `@CommandHandler`,
+> `@QueryHandler`, and `@EventHandler(...)` with arguments no longer exist.
+> Anything showing them is stale — fix it or delete it.
+
+## Runtimes
+
+**Cloudflare Workers** (primary): aggregates are Durable Objects, the event
+log is R2, state persists in `DurableObjectState.storage`. See
+[`example/`](example/).
+
+**NATS** (`ceves/nats`): the event log is a JetStream stream, state lives in
+a NATS KV bucket with revision CAS, commands travel as NATS request-reply
+messages between a thin REST gateway and a queue-group aggregate service.
+Includes a home-org partitioned event log with claim-proof routing and org
+transfer ("selling" an aggregate to another tenant). Install the transports:
+
+```bash
+npm install @nats-io/transport-node @nats-io/jetstream @nats-io/kv
+```
+
+Read [docs/architecture/nats.md](docs/architecture/nats.md), then run the
+bank example on NATS: `example/src/nats-main.ts` +
+`example/scripts/nats-e2e.sh`.
+
+**AWS Lambda** (`ceves/aws`): S3 event store + optional S3 snapshot store,
+`createLambdaHandler` adapts the router to API Gateway. Install
+`@aws-sdk/client-s3`.
+
+## Start from the example
+
+[`example/`](example/) is a complete, runnable BankAccount aggregate covering
+the Durable Object, all three route base classes, decorator registration,
+local dev, and the NATS runtime entry point. Read
+[`example/README.md`](example/README.md) before writing a new command.
+
+## Multitenancy
+
+`ITenantResolver` implementations resolve the caller's organization:
+
+- `HeaderTenantResolver` — trust an `X-Org-Id`-style header set by an
+  upstream auth gateway.
+- `ApiKeyTenantResolver` — look the API key up in a D1 table:
+
+```sql
+CREATE TABLE api_keys (
+  api_key TEXT PRIMARY KEY,
+  org_id  TEXT NOT NULL,
+  revoked INTEGER NOT NULL DEFAULT 0
+);
+```
+
+Authorization beyond tenancy belongs on the aggregate: override
+`checkAuthorization(request)` (throw `UnauthorizedError` → 401,
+`ForbiddenError` → 403).
 
 ## Development
 
 ```bash
-# Install dependencies
 npm install
-
-# Run tests
-npm test
-
-# Build library
-npm run build
-
-# Generate API docs
-npm run docs
+npm run build             # tsup → dist/ (ESM + d.ts, code-split chunks)
+npm test                  # unit + integration projects
+npm run test:unit
+npm run test:integration  # R2 store against Miniflare (vitest-pool-workers)
+npm run lint
 ```
 
-## Core Concepts
+The live NATS suite (`src/adapters/nats/__tests__/NatsEventStore.live.test.ts`)
+is skipped unless `NATS_TEST_URL` points at a running `nats-server -js`.
 
-- **Commands**: Express intent to change state (validated, can fail)
-- **Events**: Immutable facts that happened (stored forever)
-- **State**: Derived by replaying events through `apply()` methods
-- **Aggregate**: A cluster of domain objects treated as a single unit
-- **Event Store**: Append-only log of all events (R2)
-- **State Persistence**: Durable Objects use built-in transactional storage (zero-latency, no snapshots needed)
+`@cloudflare/workers-types` is pinned exactly (not `^`): newer snapshots of
+that package have caused pathological type-check blowups against this
+codebase, so bump it deliberately and re-run `npx tsc --noEmit` before
+committing the bump.
 
-## Architecture
+## Decisions
 
-### Domain Event Pattern
+- [ADR-009](docs/adr/ADR-009.md) — event handlers always receive a state value,
+  never `null`; the first event gets the empty state.
+- [docs/architecture/nats.md](docs/architecture/nats.md) — the NATS runtime:
+  subject naming, OCC and version-continuity guards, org directory,
+  transfer semantics, known limits.
 
-Ceves separates domain logic from infrastructure concerns:
+## Decorator Registration (`ceves-generate-imports`)
 
-- **Domain Events**: Pure TypeScript classes containing only business data
-- **StoredEvent**: Infrastructure envelope that wraps domain events with metadata
-- **Event Handlers**: Receive domain event + metadata as separate parameters
-- **Command Handlers**: Return domain event instances (not plain objects)
+Ceves uses class decorators (`@Route`, `@EventHandler`) that register handlers
+in a global registry as a **side effect of module evaluation**. Because of
+that, every decorated file in your worker must be imported at startup —
+otherwise its decorator never runs and the route/handler is silently missing
+from the registry.
+
+The traditional fix is `import.meta.glob({ eager: true })`, but that's a
+Vite-only feature. Wrangler's esbuild bundler expands it to an empty object,
+so every decorated route is silently dropped from production deploys. To work
+around this Ceves ships a tiny code generator: **`ceves-generate-imports`**.
+It walks your source tree and emits a static barrel of one
+`import './…';` per matching file. Plain static imports are handled
+identically by every bundler.
+
+### Wiring it into your worker
+
+Add the CLI as a `prebuild` / `predev` hook in your worker's `package.json`
+so the barrel is regenerated automatically before every build, dev run, or
+deploy:
+
+```jsonc
+{
+  "scripts": {
+    "gen:decorator-imports": "ceves-generate-imports",
+    "predev": "ceves-generate-imports",
+    "prebuild": "ceves-generate-imports",
+    "predeploy": "ceves-generate-imports"
+  }
+}
+```
+
+Then import the generated barrel **once** from your worker entry, before
+`createRouter()` runs:
 
 ```typescript
-// Domain event - pure business data
-export class AccountOpenedEvent implements DomainEvent {
-  readonly type = 'AccountOpened' as const;
-  constructor(
-    public readonly owner: string,
-    public readonly initialDeposit: number
-  ) {}
-}
+// src/index.ts
+import { createRouter } from 'ceves';
 
-// Event handler - clean separation
-@EventHandler({ eventType: 'AccountOpened', aggregateType: 'account' })
-export class AccountOpenedHandler implements IEventHandler<AccountState, AccountOpenedEvent> {
-  apply(
-    state: AccountState | null,
-    event: AccountOpenedEvent,
-    metadata: EventMetadata
-  ): Omit<AccountState, 'version' | 'orgId'> {
-    return {
-      id: metadata.aggregateId,
-      owner: event.owner,
-      balance: event.initialDeposit,
-    };
-  }
-}
+// Generated barrel — registers every @Route / @EventHandler in the project
+// and exports them as REGISTERED_ROUTES / REGISTERED_EVENT_HANDLERS.
+import { REGISTERED_ROUTES } from './_decoratorImports.generated';
 
-// Command handler - returns domain event
-@Route({ method: 'POST', path: '/accounts/:id/open' })
-export class OpenAccountHandler extends CreateCommandRoute<OpenAccountCommand, AccountState, AccountOpenedEvent> {
-  async executeCommand(command: OpenAccountCommand): Promise<AccountOpenedEvent> {
-    return new AccountOpenedEvent(command.owner, command.initialDeposit);
-  }
-}
+export { /* your DO classes */ };
+export default createRouter({
+  // Explicit route surface: only barrel classes are exposed, and a class
+  // missing its @Route metadata fails loudly at startup.
+  routes: REGISTERED_ROUTES,
+  /* ... */
+});
 ```
 
-### QueryHandler
+Add the generated file to your `.gitignore`:
 
-Read-only queries via the `@QueryHandler` decorator:
-
-```typescript
-@QueryHandler
-export class GetBalanceQuery implements IQueryHandler<BankAccountState, {}, BalanceResponse> {
-  queryType = 'GetBalance';
-  aggregateType = 'BankAccountAggregate';
-  route = '/accounts/:id/balance';
-  method = 'GET' as const;
-
-  async execute(state: BankAccountState): Promise<BalanceResponse> {
-    return { balance: state.balance, currency: 'USD' };
-  }
-}
+```
+src/_decoratorImports.generated.ts
 ```
 
-## Documentation
+The CLI is **idempotent**: it skips writing when the output is unchanged, so
+running it on every build is cheap and safe.
 
-- **Getting Started**: [GETTING_STARTED.md](./GETTING_STARTED.md)
-- **Example**: [example/README.md](./example/README.md)
+### CLI flags
 
-## License
+All flags are optional. The defaults match a domain-oriented layout
+(`src/domain/<aggregate>/{commands,routes,events}/*.{ts,tsx}`).
 
-MIT - see [LICENSE](./LICENSE)
+| Flag | Default | Purpose |
+| ---- | ------- | ------- |
+| `--src <dir>` | `src` | Source directory holding the worker code. |
+| `--pattern <glob>` | `domain/**/{commands,routes,events}/*.{ts,tsx}` | Glob beneath `--src`. Full glob syntax via [tinyglobby](https://www.npmjs.com/package/tinyglobby) — `**` vs `*` depth is honoured, `{a,b}` groups may appear anywhere or not at all. |
+| `--out <path>` | `<src>/_decoratorImports.generated.ts` | Output file path, relative to cwd. Defaults **relative to `--src`**. |
+| `--cwd <dir>` | `process.cwd()` | Resolve relative paths against this dir. Useful when invoking from a different directory in a script. |
+| `--route-decorator <name>` | `Route` | Decorator that marks a route class. |
+| `--handler-decorator <name>` | `EventHandler` | Decorator that marks an event handler. |
+| `--handler-dir <name>` | `events` | Parent folder name that classifies a file as a handler. |
+| `--routes-export <name>` | `REGISTERED_ROUTES` | Name of the emitted routes array. |
+| `--handlers-export <name>` | `REGISTERED_EVENT_HANDLERS` | Name of the emitted handlers array. |
+| `--allow-empty` | off | Exit 0 when the pattern matches nothing (default: error). |
+| `--quiet` | off | Suppress the "wrote N imports" log line. |
+
+`node_modules`, `dist` and `.d.ts` files are always excluded and symlinks are
+not followed. Tests under `commands/__tests__/` are excluded by the default
+pattern (it matches a file's **immediate** parent directory), but tests placed
+directly inside `commands/` would be picked up.
+
+### It fails loudly
+
+When you pass `routes: REGISTERED_ROUTES` (the wiring above), `createRouter`
+filters the registry on the barrel — so a class missing from the barrel is a
+route missing from production, the exact failure this tool exists to prevent.
+(Omitting `routes:` falls back to "everything any import registered", which
+loses that guarantee.) So the generator exits **non-zero** rather than
+writing an incomplete barrel when:
+
+- the pattern matches no files (override with `--allow-empty`);
+- `--src` does not exist;
+- two matched files export the same class name (the barrel could not compile);
+- an unknown flag is passed (a typo used to be ignored, yielding an empty barrel).
+
+Class detection uses the TypeScript compiler's parser, resolved from *your*
+project. So multiple decorated classes per file are all registered, decorators
+mentioned inside comments or string literals are ignored, and
+`export default class` falls back to a side-effect import rather than emitting
+a named import that cannot resolve.
+
+### Flat layouts (no `src/domain`)
+
+If your project doesn't nest aggregates under `src/domain/`, pass an explicit
+pattern. The Ceves example app uses a flat layout:
+
+```jsonc
+"gen:decorator-imports": "ceves-generate-imports --pattern '{commands,queries,events}/*.ts'"
+```
+
+See [`example/README.md`](./example/README.md) for the full setup.

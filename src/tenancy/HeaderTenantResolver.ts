@@ -41,10 +41,8 @@ import { MissingApiKeyError } from './errors';
  * // With upstream auth gateway
  * // Gateway validates credentials and sets X-Org-Id header
  * const resolver = new HeaderTenantResolver('X-Org-Id');
- * const app = new CevesApp({
- *   eventStore: new R2EventStore(env.EVENTS_BUCKET),
- *   tenantResolver: resolver
- * });
+ * // Inside your AggregateObject subclass (or wherever stores are wired):
+ * this.setStores(new R2EventStore(env.EVENTS_BUCKET), resolver);
  * ```
  */
 export class HeaderTenantResolver implements ITenantResolver {

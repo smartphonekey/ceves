@@ -144,3 +144,14 @@ vite.config.ts.timestamp-*
 # Test artifacts
 newman-results/
 postman/
+
+# Generated decorator barrels (ceves-generate-imports)
+example/src/_decoratorImports.generated.ts
+_decoratorImports.generated.ts
+
+# Generated API docs (typedoc)
+docs/api/
+
+# Build output
+dist/
+dist-nats/

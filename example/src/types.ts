@@ -1,91 +1,85 @@
 /**
  * BankAccount Domain Types
  *
- * This file defines the domain model for a simple bank account:
- * - Commands: OpenAccount, Deposit, Withdraw
- * - Events: AccountOpened, MoneyDeposited, MoneyWithdrawn
- * - State: AccountState
+ * Defines the shape of:
+ * - AccountState — what the aggregate looks like at any point in time
+ * - EventTypes  — string constants for the events we emit
+ * - Event-data Zod schemas + inferred TS types for each event
+ *
+ * Modern Ceves convention:
+ * - State is a class extending BaseState (so the framework can call
+ *   `AccountState.empty()` for the first event).
+ * - Events are defined as **two related Zod schemas**:
+ *     • `*DataSchema`     — the pure data payload (no `type` field), used
+ *                           both as `static readonly eventSchema` on the
+ *                           command route and as the OpenAPI `event.data`
+ *                           schema. This is what's on the wire under
+ *                           `event.data`.
+ *     • `*Schema`         — the data schema EXTENDED with the `type` literal
+ *                           discriminator. Used as the return-type Zod
+ *                           schema for `executeCommand()`, which still
+ *                           returns `{ type: '…', …data }`. The framework
+ *                           strips `type` before placing the event on the
+ *                           wire (see AA-82).
+ *   Splitting the two means the runtime parse runs against the actual wire
+ *   payload, and the OpenAPI doc shows exactly what clients receive.
+ * - Commands are not declared here — they are inlined as Zod body schemas in
+ *   each command-route file (see src/commands/).
  */
 
 import { z } from 'zod';
-import { defineCommand, BaseState } from 'ceves';
+import { BaseState } from 'ceves';
+
 
 /**
- * AccountState - Current state of a bank account (ADR-009)
+ * Event type discriminator constants.
  *
- * Extends BaseState which provides:
- * - id: Aggregate identifier (set by event handlers)
- * - orgId: Organization/tenant ID (set by event handlers)
- * - version: Event version (auto-set by framework)
- * - timestamp: Last update time (auto-set by framework)
+ * Using a `const` map keeps the strings centralised so refactors are typo-safe
+ * (handlers reference `EventTypes.MONEY_DEPOSITED`, not the bare literal).
  */
-export class AccountState extends BaseState {
-  owner: string = '';
-  balance: number = 0;
-}
+export const EventTypes = {
+  ACCOUNT_OPENED: 'AccountOpened',
+  MONEY_DEPOSITED: 'MoneyDeposited',
+  MONEY_WITHDRAWN: 'MoneyWithdrawn',
+} as const;
 
 /**
- * Commands - Requests to modify account state
+ * Event-data schemas (no `type` field).
+ *
+ * Each `*DataSchema` describes the pure business data carried under
+ * `event.data` on the wire — the outer `event.type` is the discriminator,
+ * so the data payload itself doesn't need to repeat it (AA-82).
+ *
+ * Use these as:
+ *   - `static readonly eventSchema = AccountOpenedDataSchema;` on the route,
+ *     so the framework runtime-parses the just-emitted data payload.
+ *   - The Zod schema for the `event.data` field in the OpenAPI response doc.
+ *
+ * The companion `*Schema` (further down) extends the data schema with the
+ * `type` literal — used as the `executeCommand()` return-type schema since
+ * handlers still return `{ type: '…', …data }`.
  */
-
-export const OpenAccountCommandSchema = defineCommand('OpenAccount', {
-  owner: z.string().min(1, 'Owner name is required'),
-  initialDeposit: z.number().min(0, 'Initial deposit must be non-negative'),
+export const AccountOpenedDataSchema = z.object({
+  owner: z.string(),
+  initialDeposit: z.number(),
 });
-
-export const DepositCommandSchema = defineCommand('Deposit', {
-  amount: z.number().positive('Deposit amount must be positive'),
+export const AccountOpenedSchema = AccountOpenedDataSchema.extend({
+  type: z.literal(EventTypes.ACCOUNT_OPENED),
 });
+export type AccountOpenedEventData = z.infer<typeof AccountOpenedSchema>;
 
-export const WithdrawCommandSchema = defineCommand('Withdraw', {
-  amount: z.number().positive('Withdrawal amount must be positive'),
+export const MoneyDepositedDataSchema = z.object({
+  amount: z.number(),
 });
-
-export type OpenAccountCommand = z.infer<typeof OpenAccountCommandSchema>;
-export type DepositCommand = z.infer<typeof DepositCommandSchema>;
-export type WithdrawCommand = z.infer<typeof WithdrawCommandSchema>;
-
-/**
- * Events - Facts about what happened to an account
- */
-
-export const AccountOpenedEventSchema = z.object({
-  aggregateType: z.literal('account'),
-  aggregateId: z.string(),
-  version: z.number(),
-  timestamp: z.string(),
-  type: z.literal('AccountOpened'),
-  data: z.object({
-    orgId: z.string(),  // Tenant/org that owns this account
-    owner: z.string(),
-    initialDeposit: z.number(),
-  }),
+export const MoneyDepositedSchema = MoneyDepositedDataSchema.extend({
+  type: z.literal(EventTypes.MONEY_DEPOSITED),
 });
+export type MoneyDepositedEventData = z.infer<typeof MoneyDepositedSchema>;
 
-export const MoneyDepositedEventSchema = z.object({
-  aggregateType: z.literal('account'),
-  aggregateId: z.string(),
-  version: z.number(),
-  timestamp: z.string(),
-  type: z.literal('MoneyDeposited'),
-  data: z.object({
-    orgId: z.string(),  // For consistency, all events include orgId
-    amount: z.number(),
-  }),
+export const MoneyWithdrawnDataSchema = z.object({
+  amount: z.number(),
 });
-
-export const MoneyWithdrawnEventSchema = z.object({
-  aggregateType: z.literal('account'),
-  aggregateId: z.string(),
-  version: z.number(),
-  timestamp: z.string(),
-  type: z.literal('MoneyWithdrawn'),
-  data: z.object({
-    orgId: z.string(),  // For consistency, all events include orgId
-    amount: z.number(),
-  }),
+export const MoneyWithdrawnSchema = MoneyWithdrawnDataSchema.extend({
+  type: z.literal(EventTypes.MONEY_WITHDRAWN),
 });
-
-export type AccountOpenedEvent = z.infer<typeof AccountOpenedEventSchema>;
-export type MoneyDepositedEvent = z.infer<typeof MoneyDepositedEventSchema>;
-export type MoneyWithdrawnEvent = z.infer<typeof MoneyWithdrawnEventSchema>;
+export type MoneyWithdrawnEventData = z.infer<typeof MoneyWithdrawnSchema>;

@@ -1,7 +1,7 @@
 {
   "name": "@sydorenkoalex/ceves",
-  "version": "0.3.0",
-  "description": "Event Sourcing framework for Cloudflare Workers and Durable Objects with CQRS and OpenAPI routing",
+  "version": "0.4.0",
+  "description": "Event Sourcing framework for Cloudflare Workers (Durable Objects + R2), AWS Lambda, and NATS \u2014 CQRS with decorator routes and OpenAPI",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -9,16 +9,37 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./aws": {
+      "types": "./dist/adapters/aws/index.d.ts",
+      "import": "./dist/adapters/aws/index.js"
+    },
+    "./nats": {
+      "types": "./dist/adapters/nats/index.d.ts",
+      "import": "./dist/adapters/nats/index.js"
+    },
+    "./nats/cloudflare-workers-shim": {
+      "types": "./dist/adapters/nats/cloudflare-workers-shim.d.ts",
+      "import": "./dist/adapters/nats/cloudflare-workers-shim.js"
     }
   },
   "bin": {
-    "ceves-discover": "bin/ceves-discover.js"
+    "ceves-generate-imports": "./bin/generate-decorator-imports.mjs"
   },
   "files": [
     "dist",
     "bin",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md",
+    "docs/adr",
+    "docs/architecture",
+    "example/src",
+    "example/README.md",
+    "example/wrangler.toml",
+    "example/tsconfig.json",
+    "example/package.json",
+    "example/scripts"
   ],
   "scripts": {
     "build": "tsup",
@@ -30,17 +51,22 @@
     "lint": "eslint src",
     "format": "prettier --write src",
     "docs": "typedoc",
-    "docs:watch": "typedoc --watch"
+    "docs:watch": "typedoc --watch",
+    "prepack": "npm run build"
   },
   "keywords": [
     "event-sourcing",
     "cqrs",
     "cloudflare-workers",
     "durable-objects",
+    "aws-lambda",
+    "nats",
+    "jetstream",
     "typescript",
     "r2",
-    "d1",
+    "s3",
     "serverless",
+    "multi-cloud",
     "event-store",
     "openapi"
   ],
@@ -55,8 +81,13 @@
     "url": "https://github.com/alexsyd/ceves/issues"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "^3.0.0",
     "@cloudflare/vitest-pool-workers": "^0.10.7",
-    "@cloudflare/workers-types": "^4.0.0",
+    "@cloudflare/workers-types": "4.20251213.0",
+    "@nats-io/jetstream": "^3.4.0",
+    "@nats-io/kv": "^3.4.0",
+    "@nats-io/transport-node": "^3.4.0",
+    "@types/aws-lambda": "^8.10.0",
     "@types/node": "^20.0.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
@@ -73,10 +104,38 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
-    "@asteasolutions/zod-to-openapi": "^7.3.4",
-    "chanfana": "^2.8.3",
-    "hono": "^4.10.6",
+    "chanfana": "^3.3.0",
     "jose": "^5.0.0",
-    "zod": "^3.25.76"
+    "tinyglobby": "^0.2.16",
+    "zod": "^4.4.3",
+    "hono": "^4.10.6"
+  },
+  "peerDependencies": {
+    "@aws-sdk/client-s3": "^3.0.0",
+    "@nats-io/jetstream": "^3.4.0",
+    "@nats-io/kv": "^3.4.0",
+    "@types/aws-lambda": "^8.10.0",
+    "typescript": ">=5.0.0",
+    "@cloudflare/workers-types": ">=4.20251213.0"
+  },
+  "peerDependenciesMeta": {
+    "@aws-sdk/client-s3": {
+      "optional": true
+    },
+    "@nats-io/jetstream": {
+      "optional": true
+    },
+    "@nats-io/kv": {
+      "optional": true
+    },
+    "@types/aws-lambda": {
+      "optional": true
+    },
+    "typescript": {
+      "optional": true
+    },
+    "@cloudflare/workers-types": {
+      "optional": true
+    }
   }
 }

@@ -28,7 +28,8 @@ type AggregateNotFoundErrorJSON = CevesErrorJSON;
  *     throw new AggregateNotFoundError(aggregateType, aggregateId);
  *   }
  *
- *   return restoreFromEvents(events);
+ *   // ... replay events to rebuild state (see AggregateObject for the
+ *   // canonical implementation).
  * }
  * ```
  */

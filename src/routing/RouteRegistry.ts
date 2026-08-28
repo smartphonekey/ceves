@@ -3,21 +3,26 @@
  */
 
 import { OpenAPIRoute } from 'chanfana';
-// Simple console logger
+import { createLogger } from '../logger.js';
 
-const logger = { debug: (...args: unknown[]) => console.debug('[RouteRegistry]', ...args) };
+const logger = createLogger({ component: 'RouteRegistry' });
 
 /** Result of matching a route segment against a path segment */
 interface SegmentMatchResult {
   matches: boolean;
-  paramName?: string;
-  paramValue?: string;
+  /**
+   * Present only for `:param` segments. Name and value always travel together,
+   * so they live in one object — as two independent optionals the compiler
+   * could not know that a present name implies a present value, which is why
+   * the caller used to need a non-null assertion.
+   */
+  param?: { name: string; value: string };
 }
 
 /** Match a route segment against a path segment */
 function matchSegment(routeSegment: string, pathSegment: string): SegmentMatchResult {
   if (routeSegment.startsWith(':')) {
-    return { matches: true, paramName: routeSegment.slice(1), paramValue: pathSegment };
+    return { matches: true, param: { name: routeSegment.slice(1), value: pathSegment } };
   }
   return { matches: routeSegment === pathSegment };
 }
@@ -37,7 +42,7 @@ function matchAllSegments(
 
     const result = matchSegment(routeSegment, pathSegment);
     if (!result.matches) return null;
-    if (result.paramName) params[result.paramName] = result.paramValue!;
+    if (result.param) params[result.param.name] = result.param.value;
   }
   return params;
 }

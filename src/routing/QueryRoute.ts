@@ -2,7 +2,7 @@
  * QueryRoute - Base class for Ceves query routes
  *
  * Extends Chanfana's OpenAPIRoute to provide automatic DO forwarding for queries.
- * Works with @Route decorator from Ceves for auto-registration.
+ * Works with the @Route decorator for auto-registration.
  *
  * Convention-based routing:
  * - URL pattern: /{aggregateType}/:id/{queryName}
@@ -13,6 +13,8 @@
 import { OpenAPIRoute } from 'chanfana';
 import type { Context } from 'hono';
 import type { BaseState } from '../schemas/State';
+import { safeDOFetch } from './safeDOFetch';
+import { handleCevesError } from './cevesErrorResponse';
 
 /**
  * Auth context stored in Hono context via middleware
@@ -47,18 +49,6 @@ function buildAuthHeaders(baseHeaders: Headers, authContext: AuthContext | undef
     if (authContext.userId) baseHeaders.set('X-User-Id', authContext.userId);
   }
   return baseHeaders;
-}
-
-/** Check if error is a CevesError and build response */
-function handleCevesError(error: unknown): Response | null {
-  if (error && typeof error === 'object' && 'httpStatusCode' in error && 'buildResponse' in error) {
-    const cevesError = error as { httpStatusCode: number; buildResponse: () => unknown };
-    return new Response(
-      JSON.stringify({ success: false, errors: cevesError.buildResponse() }),
-      { status: cevesError.httpStatusCode, headers: { 'Content-Type': 'application/json' } }
-    );
-  }
-  return null;
 }
 
 /**
@@ -151,7 +141,12 @@ export abstract class QueryRoute<
     const authContext = c.get('authContext') as AuthContext | undefined;
     const headers = buildAuthHeaders(new Headers(c.req.raw.headers), authContext);
 
-    const stateResponse = await stub.fetch(new Request(stateUrl.toString(), { method: 'GET', headers }));
+    // Wrap so a CF synthetic uncatchable error (DO reset during deploy /
+    // storage timeout / "internal error; reference = ...") becomes a
+    // structured 503 instead of an unhandled 500 — see safeDOFetch.ts.
+    const stateResponse = await safeDOFetch(
+      stub.fetch(new Request(stateUrl.toString(), { method: 'GET', headers })),
+    );
     if (!stateResponse.ok) return stateResponse;
 
     const state: TState = await stateResponse.json();

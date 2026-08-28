@@ -1,51 +1,30 @@
 /**
- * MoneyWithdrawnHandler - Handle MoneyWithdrawn events
+ * MoneyWithdrawnHandler — debits the account balance.
  *
- * Updates existing account state by decrementing balance
+ * Note: business-rule validation (insufficient funds) lives in the COMMAND
+ * route (`WithdrawRoute.executeCommand`), not here. By the time an event
+ * exists, it is a fact; event handlers must apply it without re-validating.
  */
 
 import { EventHandler, type IEventHandler, type EventMetadata } from 'ceves';
-import type { AccountState } from '../types';
-import { MoneyWithdrawnEvent } from './MoneyWithdrawnEvent';
+import { EventTypes, type MoneyWithdrawnEventData } from '../types';
+import { AccountState } from '../aggregates/BankAccountAggregate.js';
 
 @EventHandler
 export class MoneyWithdrawnHandler
-  implements IEventHandler<AccountState, MoneyWithdrawnEvent>
+  implements IEventHandler<AccountState, MoneyWithdrawnEventData>
 {
-  eventType = 'MoneyWithdrawn';
+  eventType = EventTypes.MONEY_WITHDRAWN;
   aggregateType = 'BankAccountAggregate';
 
-  /**
-   * Apply MoneyWithdrawn event to decrement balance (ADR-009)
-   *
-   * **Architecture (ADR-008 + ADR-009):**
-   * - Handler receives pure domain event and metadata separately
-   * - Handler ALWAYS receives non-null state (guaranteed by framework)
-   * - Handler just updates business logic (balance)
-   * - Framework AUTO-SETS timestamp and version AFTER handler returns
-   *
-   * @param state - Current account state (ALWAYS non-null)
-   * @param event - Pure domain event containing business data
-   * @param metadata - Infrastructure metadata (aggregateId, version, timestamp, orgId)
-   * @returns Updated AccountState (framework adds timestamp/version)
-   */
   apply(
     state: AccountState,
-    event: MoneyWithdrawnEvent,
+    event: MoneyWithdrawnEventData,
     _metadata: EventMetadata
   ): AccountState {
-    // No null check needed! Framework guarantees state exists for update events
-
-    // Validate sufficient funds
-    if (state.balance < event.amount) {
-      throw new Error('Insufficient funds for withdrawal');
-    }
-
-    // Return new state with updated balance (immutable transformation)
     return {
       ...state,
-      balance: state.balance - event.amount
-      // timestamp and version auto-set by framework AFTER return
+      balance: state.balance - event.amount,
     };
   }
 }

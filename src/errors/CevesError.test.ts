@@ -2,9 +2,9 @@
  * Unit tests for Ceves error classes
  *
  * Tests cover:
- * - Base error classes extend ApiException with additional context
- * - Domain-specific error types for common scenarios
- * - Error serialization and deserialization support
+ * - AC-2.4.1: Base error classes extend ApiException with additional context
+ * - AC-2.4.2: Domain-specific error types for common scenarios
+ * - AC-2.4.3: Error serialization and deserialization support
  * - HTTP status code propagation for API responses
  * - Chanfana integration for OpenAPI schema generation
  */
@@ -18,7 +18,7 @@ import { AggregateNotFoundError } from './AggregateNotFoundError';
 import { VersionConflictError } from './VersionConflictError';
 
 describe('CevesError', () => {
-  describe('Base error class extends ApiException with context', () => {
+  describe('AC-2.4.1: Base error class extends ApiException with context', () => {
     it('should extend JavaScript Error and ApiException classes', () => {
       // Arrange & Act
       const error = new CevesError('Test error');
@@ -137,7 +137,7 @@ describe('CevesError', () => {
     });
   });
 
-  describe('Error serialization and deserialization', () => {
+  describe('AC-2.4.3: Error serialization and deserialization', () => {
     it('should serialize to JSON with all fields including httpStatusCode', () => {
       // Arrange
       const error = new CevesError('Test error', 403, 'account', 'acc-123');
@@ -202,7 +202,7 @@ describe('CevesError', () => {
 });
 
 describe('CommandValidationError', () => {
-  describe('Domain-specific error for command validation', () => {
+  describe('AC-2.4.2: Domain-specific error for command validation', () => {
     it('should extend CevesError', () => {
       // Arrange & Act
       const error = new CommandValidationError(
@@ -301,7 +301,7 @@ describe('CommandValidationError', () => {
 });
 
 describe('EventApplicationError', () => {
-  describe('Domain-specific error for event application', () => {
+  describe('AC-2.4.2: Domain-specific error for event application', () => {
     it('should extend CevesError', () => {
       // Arrange & Act
       const error = new EventApplicationError(
@@ -391,7 +391,7 @@ describe('EventApplicationError', () => {
 });
 
 describe('AggregateNotFoundError', () => {
-  describe('Domain-specific error for missing aggregates', () => {
+  describe('AC-2.4.2: Domain-specific error for missing aggregates', () => {
     it('should extend CevesError', () => {
       // Arrange & Act
       const error = new AggregateNotFoundError('account', 'acc-123');
@@ -465,7 +465,7 @@ describe('AggregateNotFoundError', () => {
 });
 
 describe('VersionConflictError', () => {
-  describe('Domain-specific error for version conflicts', () => {
+  describe('AC-2.4.2: Domain-specific error for version conflicts', () => {
     it('should extend CevesError', () => {
       // Arrange & Act
       const error = new VersionConflictError(

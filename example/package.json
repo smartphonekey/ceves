@@ -3,22 +3,37 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Example Cloudflare Worker demonstrating Ceves event sourcing library",
+  "description": "Minimal Cloudflare Worker showing the Ceves event-sourcing library end-to-end.",
   "scripts": {
+    "gen:decorator-imports": "ceves-generate-imports --pattern '{commands,queries,events}/*.ts'",
+    "predev": "npm run gen:decorator-imports",
+    "prebuild": "npm run gen:decorator-imports",
+    "predeploy": "npm run gen:decorator-imports",
+    "pretest": "npm run gen:decorator-imports",
     "dev": "wrangler dev",
+    "build": "wrangler deploy --dry-run --outdir=dist",
     "deploy": "wrangler deploy",
+    "prenats:build": "npm run gen:decorator-imports",
+    "nats:build": "esbuild src/nats-main.ts --bundle --platform=node --format=esm --packages=external --outfile=dist-nats/main.mjs",
+    "prenats:start": "npm run nats:build",
+    "nats:start": "node --import ./scripts/register-cf-shim.mjs dist-nats/main.mjs",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
-    "ceves": "file:../",
-    "chanfana": "^2.8.3",
+    "@hono/node-server": "^2.1.1",
+    "@nats-io/jetstream": "^3.4.0",
+    "@nats-io/kv": "^3.4.0",
+    "@nats-io/transport-node": "^3.4.0",
+    "ceves": "file:..",
     "hono": "^4.10.6",
-    "zod": "^3.25.76"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20241127.0",
-    "@types/node": "^22.10.1",
+    "@cloudflare/workers-types": "4.20251213.0",
+    "@types/node": "^20.0.0",
+    "esbuild": "^0.25.0",
     "typescript": "^5.0.0",
     "vitest": "^2.1.8",
     "wrangler": "^3.95.0"

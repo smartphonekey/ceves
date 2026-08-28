@@ -101,7 +101,7 @@ export abstract class AggregateRoute extends OpenAPIRoute {
     // Get body for POST/PUT/PATCH requests
     if (['POST', 'PUT', 'PATCH'].includes(c.req.method)) {
       try {
-        const json = await c.req.json();
+        const json: unknown = await c.req.json();
         body = JSON.stringify(json);
         headers.set('Content-Type', 'application/json');
       } catch {
@@ -142,7 +142,7 @@ export abstract class AggregateRoute extends OpenAPIRoute {
    */
   protected getDurableObjectStub(c: Context, aggregateId: string): DurableObjectStub {
     const binding = this.aggregateTypeToBinding(this.aggregateType);
-    const namespace = c.env[binding] as DurableObjectNamespace;
+    const namespace = (c.env as Record<string, unknown>)[binding] as DurableObjectNamespace;
 
     if (!namespace) {
       throw new Error(

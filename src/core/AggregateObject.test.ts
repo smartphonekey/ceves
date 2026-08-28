@@ -44,7 +44,7 @@ describe('AggregateObject - Request Validation', () => {
             JSON.stringify({
               success: false,
               error: 'Validation failed',
-              details: parseResult.error.errors,
+              details: parseResult.error.issues,
             }),
             {
               status: 400,
@@ -98,7 +98,7 @@ describe('AggregateObject - Request Validation', () => {
         expect(body.details.length).toBeGreaterThan(0);
 
         // Check that missing fields are reported
-        const paths = (body.details as z.ZodIssue[]).map((e) => e.path[0]);
+        const paths = (body.details as z.core.$ZodIssue[]).map((e) => e.path[0]);
         expect(paths).toContain('lockId');
         expect(paths).toContain('lockName');
       }
@@ -121,7 +121,7 @@ describe('AggregateObject - Request Validation', () => {
       if (!result.success) {
         expect(result.response.status).toBe(400);
         const body = await result.response.json();
-        expect((body.details as z.ZodIssue[]).some((e) => e.path[0] === 'lockName')).toBe(true);
+        expect((body.details as z.core.$ZodIssue[]).some((e) => e.path[0] === 'lockName')).toBe(true);
       }
     });
   });
@@ -144,7 +144,7 @@ describe('AggregateObject - Request Validation', () => {
       if (!result.success) {
         expect(result.response.status).toBe(400);
         const body = await result.response.json();
-        expect((body.details as z.ZodIssue[]).some((e) => e.code === 'invalid_type')).toBe(true);
+        expect((body.details as z.core.$ZodIssue[]).some((e) => e.code === 'invalid_type')).toBe(true);
       }
     });
 
@@ -305,7 +305,7 @@ describe('AggregateObject - Request Validation', () => {
     it('should include path and message in error details', async () => {
       // Arrange
       const schema = z.object({
-        email: z.string().email('Invalid email format'),
+        email: z.email('Invalid email format'),
       });
       const handlerEntry = createHandlerEntry(schema);
       const invalidCommand = { email: 'not-an-email' };

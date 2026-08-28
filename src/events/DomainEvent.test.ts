@@ -94,8 +94,10 @@ describe('DomainEvent', () => {
       const event = new TestAccountOpenedEvent('john@example.com', 100);
       const keys = Object.keys(event);
 
-      // Should only have: type, owner, initialDeposit
-      expect(keys).toEqual(['type', 'owner', 'initialDeposit']);
+      // Should only have: type, owner, initialDeposit. Key ORDER is
+      // incidental (it depends on how the transpiler sequences class-field
+      // vs parameter-property initialization), so compare as a set.
+      expect(keys.sort()).toEqual(['initialDeposit', 'owner', 'type']);
     });
   });
 

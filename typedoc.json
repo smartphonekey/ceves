@@ -1,0 +1,28 @@
+{
+    "entryPoints": [
+        "src/index.ts"
+    ],
+    "out": "docs/api",
+    "plugin": [
+        "typedoc-plugin-markdown"
+    ],
+    "readme": "README.md",
+    "excludePrivate": true,
+    "excludeInternal": true,
+    "excludeExternals": true,
+    "gitRevision": "main",
+    "navigation": {
+        "includeCategories": true,
+        "includeGroups": true
+    },
+    "categorizeByGroup": true,
+    "sort": [
+        "source-order"
+    ],
+    "kindSortOrder": [
+        "Class",
+        "Interface",
+        "TypeAlias",
+        "Function"
+    ]
+}

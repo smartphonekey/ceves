@@ -1,35 +1,38 @@
 name = "ceves-example"
 main = "src/index.ts"
 compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
 
-# R2 bucket for event storage (required)
-# Create with: wrangler r2 bucket create ceves-example-events
+# R2 bucket for the immutable event log (required by Ceves).
+# `wrangler dev` provides an in-memory R2 implementation, so no setup is
+# needed locally. For real deployments:
+#   wrangler r2 bucket create ceves-example-events
 [[r2_buckets]]
 binding = "EVENTS_BUCKET"
 bucket_name = "ceves-example-events"
 preview_bucket_name = "ceves-example-events-preview"
 
-# D1 database for snapshot storage (optional)
-# Create with: wrangler d1 create ceves-example-snapshots
-# Uncomment and add your database_id after creation
-# [[d1_databases]]
-# binding = "SNAPSHOTS_DB"
-# database_name = "ceves-example-snapshots"
-# database_id = "your-database-id-here"
+# R2 bucket for periodic snapshots (optional but recommended — speeds up
+# state restoration for aggregates with long event streams).
+#   wrangler r2 bucket create ceves-example-snapshots
+[[r2_buckets]]
+binding = "SNAPSHOTS_BUCKET"
+bucket_name = "ceves-example-snapshots"
+preview_bucket_name = "ceves-example-snapshots-preview"
 
-# D1 database for tenant/API key data (required for multitenancy)
-# Create with: wrangler d1 create ceves-tenants
-# Apply migrations: wrangler d1 migrations apply ceves-tenants --local
-[[d1_databases]]
-binding = "TENANT_DB"
-database_name = "ceves-tenants"
-database_id = "local-dev-db-id"  # Placeholder for local development
+# One Durable Object class per aggregate. The binding NAME (not the class
+# name) is what Ceves looks up when forwarding requests — Ceves derives it
+# from `aggregateType` by:
+#   1. snake_case-ing the aggregate type
+#   2. uppercasing
+#   3. dropping a trailing `_AGGREGATE`
+# So `aggregateType = 'BankAccountAggregate'` → binding `BANK_ACCOUNT`.
+[[durable_objects.bindings]]
+name = "BANK_ACCOUNT"
+class_name = "BankAccountAggregate"
 
-# Environment variables
-[vars]
-LOG_LEVEL = "info"
-DEFAULT_ORG_ID = "default-org"  # For development without API keys
-
-# Development overrides
-[env.dev]
-vars = { LOG_LEVEL = "debug" }
+# Required by Workers when introducing a Durable Object class. Using a
+# SQLite-backed class keeps the example deployable on the free plan.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["BankAccountAggregate"]

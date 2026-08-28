@@ -2,9 +2,10 @@
  * Unit tests for State type definitions
  *
  * Tests cover:
- * - State type pattern with required fields (id, version, timestamp)
- * - State type conventions and examples
- * - Type inference and IDE autocomplete
+ * - AC-2.3.1: State type pattern with required fields (id, version, timestamp)
+ * - AC-2.3.2: State type conventions and examples
+ * - AC-2.3.3: Type inference and IDE autocomplete
+ * - Integration with Event apply methods
  * - Edge cases and type safety
  */
 
@@ -12,7 +13,7 @@ import { describe, it, expect } from 'vitest';
 import { BaseState } from './State';
 
 describe('BaseState', () => {
-  describe('State type pattern with required fields', () => {
+  describe('AC-2.3.1: State type pattern with required fields', () => {
     it('should have id field (string type)', () => {
       // Arrange
       const state: BaseState = {
@@ -107,7 +108,7 @@ describe('BaseState', () => {
     });
   });
 
-  describe('State type conventions and naming', () => {
+  describe('AC-2.3.2: State type conventions and naming', () => {
     it('should support extending BaseState with custom fields using intersection types', () => {
       // Arrange - Following [DomainEntity]State naming convention
       type BankAccountState = BaseState & {
@@ -249,7 +250,7 @@ describe('BaseState', () => {
     });
   });
 
-  describe('Type inference and IDE autocomplete', () => {
+  describe('AC-2.3.3: Type inference and IDE autocomplete', () => {
     it('should infer types correctly from BaseState', () => {
       // Arrange
       const state: BaseState = {
@@ -343,4 +344,122 @@ describe('BaseState', () => {
     });
   });
 
-})
+  describe('Edge cases and type safety', () => {
+    it('should allow any string for id field', () => {
+      // Arrange - Various id formats
+      const uuidState: BaseState = {
+        id: '550e8400-e29b-41d4-a716-446655440000',
+        version: 1,
+        timestamp: '2025-11-15T10:00:00Z',
+      };
+
+      const prefixedState: BaseState = {
+        id: 'user-12345',
+        version: 1,
+        timestamp: '2025-11-15T10:00:00Z',
+      };
+
+      const shortIdState: BaseState = {
+        id: 'a1b2c3',
+        version: 1,
+        timestamp: '2025-11-15T10:00:00Z',
+      };
+
+      // Act & Assert
+      expect(uuidState.id).toBeDefined();
+      expect(prefixedState.id).toBeDefined();
+      expect(shortIdState.id).toBeDefined();
+    });
+
+    it('should allow any positive integer for version', () => {
+      // Arrange
+      const state1: BaseState = {
+        id: 'test',
+        version: 1,
+        timestamp: '2025-11-15T10:00:00Z',
+      };
+
+      const state1000: BaseState = {
+        id: 'test',
+        version: 1000,
+        timestamp: '2025-11-15T10:00:00Z',
+      };
+
+      const stateLarge: BaseState = {
+        id: 'test',
+        version: 999999,
+        timestamp: '2025-11-15T10:00:00Z',
+      };
+
+      // Act & Assert
+      expect(state1.version).toBe(1);
+      expect(state1000.version).toBe(1000);
+      expect(stateLarge.version).toBe(999999);
+    });
+
+    it('should allow ISO 8601 timestamp strings', () => {
+      // Arrange - Various ISO 8601 formats
+      const stateWithMillis: BaseState = {
+        id: 'test',
+        version: 1,
+        timestamp: '2025-11-15T14:30:00.123Z',
+      };
+
+      const stateWithoutMillis: BaseState = {
+        id: 'test',
+        version: 1,
+        timestamp: '2025-11-15T14:30:00Z',
+      };
+
+      const stateWithTimezone: BaseState = {
+        id: 'test',
+        version: 1,
+        timestamp: '2025-11-15T14:30:00+00:00',
+      };
+
+      // Act & Assert
+      expect(stateWithMillis.timestamp).toContain('.123Z');
+      expect(stateWithoutMillis.timestamp).toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z/);
+      expect(stateWithTimezone.timestamp).toContain('+00:00');
+    });
+
+    it('should support readonly state pattern for immutability', () => {
+      // Arrange
+      type ReadonlyAccountState = Readonly<
+        BaseState & {
+          email: string;
+          balance: number;
+        }
+      >;
+
+      const state: ReadonlyAccountState = {
+        id: 'acc-123',
+        version: 1,
+        timestamp: '2025-11-15T10:00:00Z',
+        email: 'alice@example.com',
+        balance: 100,
+      };
+
+      // Act & Assert - TypeScript prevents mutation at compile time
+      // state.balance = 200; // TypeScript error: Cannot assign to 'balance' because it is a read-only property
+      expect(state.balance).toBe(100);
+    });
+  });
+});
+
+describe('Integration with exports', () => {
+  it('should be importable from index.ts', async () => {
+    // This test verifies exports are configured correctly
+    const { BaseState: ImportedBaseState } = await import('../index');
+
+    // Act - Create state using imported type
+    const state: typeof ImportedBaseState = {
+      id: 'test',
+      version: 1,
+      timestamp: '2025-11-15T10:00:00Z',
+    };
+
+    // Assert
+    expect(state.id).toBe('test');
+  });
+});

@@ -1,48 +1,46 @@
 /**
- * AccountOpenedHandler - Handle AccountOpened events
+ * AccountOpenedHandler — applies AccountOpened to build initial account state.
  *
- * Creates initial account state from null (Story 9.8)
+ * Modern Ceves event handlers:
+ * - Implement `IEventHandler<TState, TEventData>`
+ * - Are decorated with the bare `@EventHandler` class decorator (no arguments)
+ * - Set `eventType` to a string literal from EventTypes
+ * - Set `aggregateType` to the DO class name (e.g. 'BankAccountAggregate')
+ * - Receive a NEVER-NULL state (empty for the first event, per ADR-009)
+ * - Receive separate `metadata` carrying aggregateId / version / timestamp / orgId
  */
 
 import { EventHandler, type IEventHandler, type EventMetadata } from 'ceves';
-import type { AccountState } from '../types';
-import { AccountOpenedEvent } from './AccountOpenedEvent';
+import { EventTypes, type AccountOpenedEventData } from '../types';
+import { AccountState } from '../aggregates/BankAccountAggregate.js';
 
 @EventHandler
 export class AccountOpenedHandler
-  implements IEventHandler<AccountState, AccountOpenedEvent>
+  implements IEventHandler<AccountState, AccountOpenedEventData>
 {
-  eventType = 'AccountOpened';
+  eventType = EventTypes.ACCOUNT_OPENED;
   aggregateType = 'BankAccountAggregate';
 
   /**
-   * Apply AccountOpened event to create initial state (ADR-009)
+   * Apply AccountOpened to produce the initial state.
    *
-   * **Architecture (ADR-008 + ADR-009):**
-   * - Handler receives pure domain event (only business data) and infrastructure metadata separately
-   * - Handler ALWAYS receives non-null state (empty state for first event)
-   * - Handler SETS id and orgId (business decisions from metadata)
-   * - Framework AUTO-SETS timestamp and version AFTER handler returns
-   *
-   * @param state - Current state (NEVER null - empty for first event)
-   * @param event - Pure domain event with owner and initialDeposit
-   * @param metadata - Infrastructure metadata (aggregateId, version, timestamp, orgId)
-   * @returns New AccountState with id and orgId set (framework adds timestamp/version)
+   * @param state    Empty state for the first event (NEVER null).
+   * @param event    Pure business data describing the AccountOpened fact.
+   * @param metadata Infrastructure metadata supplied by the framework.
+   * @returns        The new AccountState. Framework auto-sets version & timestamp.
    */
   apply(
     state: AccountState,
-    event: AccountOpenedEvent,
+    event: AccountOpenedEventData,
     metadata: EventMetadata
   ): AccountState {
-    // No null check needed! For first event: state === AccountState.empty()
-    // Handler sets id and orgId (business decisions)
     return {
       ...state,
-      id: metadata.aggregateId,
-      orgId: metadata.orgId,         // Handler sets orgId (business decision)
-      owner: event.owner,            // Pure business data from domain event
-      balance: event.initialDeposit  // Pure business data from domain event
-      // timestamp and version auto-set by framework AFTER return
+      id: metadata.aggregateId, // business: the aggregate's identity
+      orgId: metadata.orgId,    // business: which tenant this account belongs to
+      owner: event.owner,
+      balance: event.initialDeposit,
+      // version + timestamp are set by Ceves AFTER this returns
     };
   }
 }

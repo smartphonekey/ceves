@@ -18,9 +18,9 @@
 /**
  * Base state class for all aggregates in the event sourcing system.
  *
- * BaseState is a class (not an interface) to support the empty state pattern.
- * This eliminates null checks in event handlers by guaranteeing that handlers
- * always receive non-null state.
+ * As of ADR-009, BaseState has been converted from an interface to a class
+ * to support the empty state pattern. This eliminates null checks in event handlers
+ * by guaranteeing that handlers always receive non-null state.
  *
  * Every state must include:
  * - `id`: Unique identifier for the aggregate instance (set by event handlers from metadata)
@@ -28,7 +28,7 @@
  * - `version`: Current version number (infrastructure - auto-set by framework)
  * - `timestamp`: ISO 8601 datetime string (infrastructure - auto-set by framework)
  *
- * **Key Design Decisions:**
+ * **Key Design Decisions (ADR-009):**
  * - Event handlers ALWAYS receive non-null state (empty state for first event)
  * - Event handlers SET id and orgId (business decisions)
  * - Framework AUTO-SETS version and timestamp (infrastructure fields)

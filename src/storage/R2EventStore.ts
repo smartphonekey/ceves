@@ -20,22 +20,23 @@
  */
 
 import type { R2Bucket } from '@cloudflare/workers-types';
-import type { IEventStore, StoredEvent } from './interfaces';
-import { EventStoreError, EventWriteError } from './errors';
+import type { IEventStore, StoredEvent, StoredSnapshot } from './interfaces';
+import { EventStoreError, EventWriteError, SnapshotStoreError } from './errors';
 
 /**
- * R2-based implementation of IEventStore.
+ * R2-based implementation of IEventStore and ISnapshotStore interfaces.
  *
  * Persists events to Cloudflare R2 object storage using a structured file path convention.
  * Each event is stored as a separate JSON file, enabling append-only semantics and
  * efficient incremental loading.
  *
- * For snapshot storage, use R2SnapshotStore or D1SnapshotStore instead.
+ * Snapshots are stored as single JSON files per aggregate, overwriting previous snapshots.
+ * This enables fast state restoration by loading a snapshot and replaying only incremental events.
  *
  * @example
  * ```typescript
  * // In a Cloudflare Worker with R2 binding
- * const eventStore = new R2EventStore(env.EVENTS_BUCKET);
+ * const eventStore = new R2EventStore(env.EVENT_BUCKET, env.SNAPSHOTS_BUCKET);
  *
  * // Save an event
  * await eventStore.save({
@@ -44,8 +45,7 @@ import { EventStoreError, EventWriteError } from './errors';
  *   version: 1,
  *   type: 'AccountCreated',
  *   timestamp: new Date().toISOString(),
- *   orgId: 'org-456',
- *   event: { type: 'AccountCreated', ... }
+ *   data: { initialBalance: 0 }
  * });
  *
  * // Load all events for an aggregate
@@ -53,6 +53,15 @@ import { EventStoreError, EventWriteError } from './errors';
  *
  * // Load events after version 10 (incremental loading)
  * const recentEvents = await eventStore.load('account', 'acc-123', 10);
+ *
+ * // Save a snapshot
+ * await eventStore.save({
+ *   aggregateType: 'account',
+ *   aggregateId: 'acc-123',
+ *   version: 100,
+ *   timestamp: new Date().toISOString(),
+ *   state: { id: 'acc-123', balance: 1500 }
+ * });
  * ```
  */
 export class R2EventStore implements IEventStore {
@@ -62,53 +71,104 @@ export class R2EventStore implements IEventStore {
   private readonly eventsBucket: R2Bucket;
 
   /**
+   * The R2 bucket used for snapshot storage.
+   * If not provided, snapshots are stored in the events bucket.
+   */
+  private readonly snapshotsBucket: R2Bucket;
+
+  /**
    * Create a new R2EventStore.
    *
    * @param eventsBucket - The R2 bucket binding to use for event storage
+   * @param snapshotsBucket - Optional separate R2 bucket for snapshot storage.
+   *                          If not provided, snapshots are stored in eventsBucket.
    *
    * @example
    * ```typescript
-   * // In a Cloudflare Worker
+   * // In a Cloudflare Worker with separate buckets
    * export default {
    *   async fetch(request, env) {
-   *     const eventStore = new R2EventStore(env.EVENTS_BUCKET);
+   *     const eventStore = new R2EventStore(env.EVENTS_BUCKET, env.SNAPSHOTS_BUCKET);
    *     // Use eventStore...
    *   }
    * }
    * ```
+   *
+   * @example
+   * ```typescript
+   * // Using single bucket for both events and snapshots
+   * const eventStore = new R2EventStore(env.EVENTS_BUCKET);
+   * ```
    */
-  constructor(eventsBucket: R2Bucket) {
+  constructor(eventsBucket: R2Bucket, snapshotsBucket?: R2Bucket) {
     this.eventsBucket = eventsBucket;
+    this.snapshotsBucket = snapshotsBucket || eventsBucket;
   }
 
   /**
-   * Persist an event to R2 storage.
+   * Persist an event or snapshot to R2 storage.
    *
-   * Serialized to JSON and written to R2 using path: `{aggregateType}/{aggregateId}/{paddedVersion}.json`
-   * Version numbers are zero-padded to 9 digits for lexicographic sorting.
+   * For events:
+   * - Serialized to JSON and written to R2 using path: `{aggregateType}/{aggregateId}/{paddedVersion}.json`
+   * - Version numbers are zero-padded to 9 digits for lexicographic sorting
    *
-   * @param event - The event to persist
-   * @returns Promise that resolves when the event is durably stored in R2
-   * @throws {EventWriteError} If the event cannot be written to R2
+   * For snapshots:
+   * - Serialized to JSON and written to R2 using path: `{aggregateType}/{aggregateId}/snapshot.json`
+   * - Overwrites any previous snapshot
+   *
+   * @param item - The event or snapshot to persist
+   * @returns Promise that resolves when the item is durably stored in R2
+   * @throws {EventWriteError} If an event cannot be written to R2
+   * @throws {SnapshotStoreError} If a snapshot cannot be written to R2
    */
-  async save(event: StoredEvent): Promise<void> {
-    try {
-      const key = this.buildEventKey(event.aggregateType, event.aggregateId, event.version);
-      const jsonContent = JSON.stringify(event);
+  async save(item: StoredEvent): Promise<void>;
+  async save(item: StoredSnapshot): Promise<void>;
+  async save(item: StoredEvent | StoredSnapshot): Promise<void> {
+    // Discriminate between StoredEvent and StoredSnapshot
+    // StoredEvent has 'type' field, StoredSnapshot has 'state' field
+    if ('type' in item) {
+      // It's a StoredEvent
+      try {
+        const key = this.buildEventKey(item.aggregateType, item.aggregateId, item.version);
+        const jsonContent = JSON.stringify(item);
 
-      await this.eventsBucket.put(key, jsonContent);
+        await this.eventsBucket.put(key, jsonContent);
 
-      return Promise.resolve();
-    } catch (error) {
-      throw new EventWriteError(
-        `Failed to save event for ${event.aggregateType}/${event.aggregateId} v${event.version}`,
-        {
-          aggregateType: event.aggregateType,
-          aggregateId: event.aggregateId,
-          version: event.version,
-          cause: error instanceof Error ? error : new Error(String(error)),
-        }
-      );
+        return Promise.resolve();
+      } catch (error) {
+        throw new EventWriteError(
+          `Failed to save event for ${item.aggregateType}/${item.aggregateId} v${item.version}`,
+          {
+            aggregateType: item.aggregateType,
+            aggregateId: item.aggregateId,
+            version: item.version,
+            cause: error instanceof Error ? error : new Error(String(error)),
+          }
+        );
+      }
+    } else {
+      // It's a StoredSnapshot
+      try {
+        const key = this.buildSnapshotKey(item.aggregateType, item.aggregateId);
+        const jsonContent = JSON.stringify(item);
+
+        await this.snapshotsBucket.put(key, jsonContent, {
+          httpMetadata: {
+            contentType: 'application/json',
+          },
+        });
+
+        return Promise.resolve();
+      } catch (error) {
+        throw new SnapshotStoreError(
+          `Failed to save snapshot for ${item.aggregateType}/${item.aggregateId} v${item.version}`,
+          {
+            aggregateType: item.aggregateType,
+            aggregateId: item.aggregateId,
+            cause: error instanceof Error ? error : new Error(String(error)),
+          }
+        );
+      }
     }
   }
 
@@ -138,27 +198,47 @@ export class R2EventStore implements IEventStore {
   async load(
     aggregateType: string,
     aggregateId: string,
-    afterVersion?: number
+    afterVersion?: number,
+    limit?: number
   ): Promise<StoredEvent[]> {
     try {
       const prefix = `${aggregateType}/${aggregateId}/`;
 
-      // List all event files for this aggregate
-      const listed = await this.eventsBucket.list({ prefix });
-
-      // Filter by afterVersion if specified
-      const relevantObjects = listed.objects.filter((obj) => {
-        if (afterVersion === undefined) {
-          return true;
+      // When a `limit` is given, page natively in R2: `startAfter` (derived
+      // from `afterVersion`, exploiting the zero-padded keys' lexicographic =
+      // version ordering) + `limit` fetch only the next page's keys. This never
+      // lists or loads the whole stream into memory, and walks past R2's
+      // 1000-object list cap one page at a time. Without `limit` we keep the
+      // original "list everything" behaviour for backward compatibility.
+      const listOptions: { prefix: string; limit?: number; startAfter?: string } = { prefix };
+      if (limit !== undefined) {
+        listOptions.limit = limit;
+        if (afterVersion !== undefined && afterVersion > 0) {
+          listOptions.startAfter = this.buildEventKey(aggregateType, aggregateId, afterVersion);
         }
+      }
 
-        // Extract version from key: "account/acc-123/000000042.json" → 42
+      const listed = await this.eventsBucket.list(listOptions);
+
+      // Keep only real event objects after `afterVersion`. The version is
+      // parsed from the key ("account/acc-123/000000042.json" → 42); non-event
+      // keys under the same prefix (e.g. a co-located "snapshot.json", which
+      // sorts after the numeric keys) parse to NaN and are skipped.
+      const relevantObjects = listed.objects.filter((obj) => {
         const versionStr = obj.key.split('/')[2]?.replace('.json', '');
         if (!versionStr) {
           return false;
         }
 
         const version = parseInt(versionStr, 10);
+        if (Number.isNaN(version)) {
+          return false;
+        }
+
+        if (afterVersion === undefined) {
+          return true;
+        }
+
         return version > afterVersion;
       });
 
@@ -263,4 +343,73 @@ export class R2EventStore implements IEventStore {
     return version.toString().padStart(9, '0');
   }
 
+  /**
+   * Save a snapshot to R2 storage (explicit method for clarity).
+   *
+   * Alias for save(snapshot) that makes intent clearer.
+   *
+   * @param snapshot - The snapshot to persist
+   * @returns Promise that resolves when the snapshot is durably stored
+   */
+  async saveSnapshot(snapshot: StoredSnapshot): Promise<void> {
+    return this.save(snapshot);
+  }
+
+  /**
+   * Load the latest snapshot for an aggregate from R2 storage (explicit method).
+   *
+   * @param aggregateType - Type of aggregate (e.g., "account")
+   * @param aggregateId - Unique identifier of the aggregate instance
+   * @returns Promise resolving to the latest snapshot, or null if no snapshot exists
+   */
+  async loadSnapshot(
+    aggregateType: string,
+    aggregateId: string
+  ): Promise<StoredSnapshot | null> {
+    try {
+      const key = this.buildSnapshotKey(aggregateType, aggregateId);
+      const snapshotObj = await this.snapshotsBucket.get(key);
+
+      if (!snapshotObj) {
+        // No snapshot exists - this is not an error
+        return null;
+      }
+
+      const snapshotJson = await snapshotObj.text();
+      const snapshot = JSON.parse(snapshotJson) as StoredSnapshot;
+
+      return snapshot;
+    } catch (error) {
+      throw new SnapshotStoreError(
+        `Failed to load snapshot for ${aggregateType}/${aggregateId}`,
+        {
+          aggregateType,
+          aggregateId,
+          cause: error instanceof Error ? error : new Error(String(error)),
+        }
+      );
+    }
+  }
+
+  /**
+   * Build the R2 object key for a snapshot.
+   *
+   * Constructs a simple path for snapshots:
+   * `{aggregateType}/{aggregateId}/snapshot.json`
+   *
+   * @param aggregateType - Type of aggregate
+   * @param aggregateId - ID of aggregate instance
+   * @returns R2 object key
+   *
+   * @internal
+   *
+   * @example
+   * ```typescript
+   * buildSnapshotKey('account', 'acc-123')
+   * // Returns: "account/acc-123/snapshot.json"
+   * ```
+   */
+  private buildSnapshotKey(aggregateType: string, aggregateId: string): string {
+    return `${aggregateType}/${aggregateId}/snapshot.json`;
+  }
 }

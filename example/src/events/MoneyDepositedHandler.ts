@@ -1,45 +1,30 @@
 /**
- * MoneyDepositedHandler - Handle MoneyDeposited events
+ * MoneyDepositedHandler — credits the account balance.
  *
- * Updates existing account state by incrementing balance (Story 9.8)
+ * Trivial state transformation: existing state + amount → new state. The
+ * framework guarantees `state` is non-null because Deposit is an UPDATE
+ * command (CommandRoute, not CreateCommandRoute).
  */
 
 import { EventHandler, type IEventHandler, type EventMetadata } from 'ceves';
-import type { AccountState } from '../types';
-import { MoneyDepositedEvent } from './MoneyDepositedEvent';
+import { EventTypes, type MoneyDepositedEventData } from '../types';
+import { AccountState } from '../aggregates/BankAccountAggregate.js';
 
 @EventHandler
 export class MoneyDepositedHandler
-  implements IEventHandler<AccountState, MoneyDepositedEvent>
+  implements IEventHandler<AccountState, MoneyDepositedEventData>
 {
-  eventType = 'MoneyDeposited';
+  eventType = EventTypes.MONEY_DEPOSITED;
   aggregateType = 'BankAccountAggregate';
 
-  /**
-   * Apply MoneyDeposited event to increment balance (ADR-009)
-   *
-   * **Architecture (ADR-008 + ADR-009):**
-   * - Handler receives pure domain event and metadata separately
-   * - Handler ALWAYS receives non-null state (guaranteed by framework)
-   * - Handler just updates business logic (balance)
-   * - Framework AUTO-SETS timestamp and version AFTER handler returns
-   *
-   * @param state - Current account state (ALWAYS non-null)
-   * @param event - Pure domain event with amount
-   * @param metadata - Infrastructure metadata (aggregateId, version, timestamp, orgId)
-   * @returns Updated AccountState (framework adds timestamp/version)
-   */
   apply(
     state: AccountState,
-    event: MoneyDepositedEvent,
+    event: MoneyDepositedEventData,
     _metadata: EventMetadata
   ): AccountState {
-    // No null check needed! Framework guarantees state exists for update events
-    // Just update business logic
     return {
       ...state,
-      balance: state.balance + event.amount  // Pure business data from domain event
-      // timestamp and version auto-set by framework AFTER return
+      balance: state.balance + event.amount,
     };
   }
 }

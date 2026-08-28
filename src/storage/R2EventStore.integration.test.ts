@@ -159,6 +159,41 @@ describe('R2EventStore integration (Workers runtime)', () => {
     });
   });
 
+  describe('load() with bounded limit paging (startAfter)', () => {
+    beforeEach(async () => {
+      // 12 events so paging in batches of 5 yields 5 + 5 + 2 — the exact
+      // shape the batched DO restore walks.
+      for (let i = 1; i <= 12; i++) {
+        await eventStore.save(createTestEvent('account', 'acc-paged', i, `Event${i}`));
+      }
+    });
+
+    it('returns at most `limit` events as the first page', async () => {
+      const page = await eventStore.load('account', 'acc-paged', 0, 5);
+      expect(page.map((e) => e.version)).toEqual([1, 2, 3, 4, 5]);
+    });
+
+    it('returns a short final page (< limit) at the end of the stream', async () => {
+      const lastPage = await eventStore.load('account', 'acc-paged', 10, 5);
+      expect(lastPage.map((e) => e.version)).toEqual([11, 12]);
+    });
+
+    it('pages forward via afterVersion + limit covering the whole stream with no gaps/dupes', async () => {
+      const collected: number[] = [];
+      let after = 0;
+      let page = await eventStore.load('account', 'acc-paged', after, 5);
+      while (page.length > 0) {
+        collected.push(...page.map((e) => e.version));
+        if (page.length < 5) break;
+        after = page[page.length - 1].version;
+        page = await eventStore.load('account', 'acc-paged', after, 5);
+      }
+      // Proves R2 `startAfter` advances correctly across pages — every event,
+      // in order, exactly once.
+      expect(collected).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    });
+  });
+
   describe('loadAll()', () => {
     it('should load all events for an aggregate in order', async () => {
       // Arrange

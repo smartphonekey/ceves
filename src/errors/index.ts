@@ -10,11 +10,30 @@
 export { CevesError } from './CevesError';
 export { CommandValidationError } from './CommandValidationError';
 export { EventApplicationError } from './EventApplicationError';
+export { StateRestorationError } from './StateRestorationError';
 export { AggregateNotFoundError } from './AggregateNotFoundError';
+export { AggregateAlreadyExistsError } from './AggregateAlreadyExistsError';
 export { VersionConflictError } from './VersionConflictError';
+export { VersionMismatchError } from './VersionMismatchError';
 export { BusinessRuleViolationError } from './BusinessRuleViolationError';
 export { UnauthorizedError } from './UnauthorizedError';
 export { ForbiddenError } from './ForbiddenError';
+
+/**
+ * Cross-RPC error coercion helpers (AA-119).
+ *
+ * `serializeErrorToResponse` and `rehydrateErrorFromResponse` shuttle
+ * typed errors across the Durable Object RPC boundary so callers don't
+ * see Cloudflare's opaque `internal error; reference = ...` wrapper.
+ * `stubFetchWithTypedErrors` is the opt-in caller wrapper that
+ * rehydrates and re-throws.
+ */
+export {
+  CROSS_RPC_ERROR_HEADER,
+  rehydrateErrorFromResponse,
+  serializeErrorToResponse,
+  stubFetchWithTypedErrors,
+} from './cross-rpc';
 
 /**
  * Re-export ZodError for convenience.

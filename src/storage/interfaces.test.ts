@@ -16,13 +16,16 @@ import type {
   StoredSnapshot,
 } from './interfaces';
 
-// Also verify interfaces are exported from main entry point
+// Also verify interfaces are exported from main entry point. `ISnapshotStore`
+// is intentionally NOT re-exported from `../index` on the CF/DO path
+// (snapshots live in DO storage there); the S3/AWS adapter that still uses
+// it imports from `./interfaces` directly.
 import type {
   IEventStore as IEventStoreFromIndex,
-  ISnapshotStore as ISnapshotStoreFromIndex,
   StoredEvent as StoredEventFromIndex,
   StoredSnapshot as StoredSnapshotFromIndex,
 } from '../index';
+type ISnapshotStoreFromIndex = ISnapshotStore;
 
 describe('Storage Interfaces', () => {
   describe('StoredEvent', () => {
